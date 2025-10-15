@@ -17,6 +17,8 @@
 
 static i2c_master_dev_handle_t disp_handle;
 
+static lv_obj_t *counter_label;
+
 void init_i2c(void){
     i2c_master_bus_config_t i2c_mst_config = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
@@ -95,11 +97,82 @@ void init_display(void){
     i2c_disp_send_cmd(0xAF); // Set display On
 }
 
+void lvgl_flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p){
+    size_t width = lv_area_get_width(area);
+    size_t height = lv_area_get_height(area);
+    size_t len = (width * height) / 8;
+
+    i2c_disp_send_data((uint8_t*)color_p, len);
+    lv_disp_flush_ready(drv);
+}
+
+void init_graphics(void){
+    lv_init();
+
+    static lv_disp_draw_buf_t disp_buf;
+    static lv_color_t buf1[128*8];
+    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, 128*8);
+
+    static lv_disp_drv_t disp_drv;
+    lv_disp_drv_init(&disp_drv);
+    disp_drv.hor_res = 128;
+    disp_drv.ver_res = 64;
+    disp_drv.flush_cb = lvgl_flush_callback;
+    disp_drv.draw_buf = &disp_buf;
+    lv_disp_drv_register(&disp_drv);
+}
+
+void lv_tick_task(void *arg){
+    while(1){
+        lv_tick_inc(1);
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
+
+void lv_task(void *arg){
+    while(1){
+        lv_task_handler();
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+}
+
+
+void counter_task(void *arg){
+    uint8_t counter = 0;
+
+    while(1){
+        char buf[3];
+        snprintf(buf, sizeof(buf), "%02d", counter);
+        lv_label_set_text(counter_label, buf);
+
+        if(counter >= 99){
+            counter = 0;
+        } else {
+            counter++;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void create_counter(void){
+    counter_label = lv_label_create(lv_scr_act());
+    lv_label_set_text(counter_label, "00");
+    lv_obj_align(counter_label, LV_ALIGN_CENTER, 0, 0);
+
+    xTaskCreate(counter_task, "counter_task", 2048, NULL, 5, NULL);
+}
+
 
 void app_main(void){
     init_i2c();
     init_display();
-    lv_init();
+    init_graphics();
+
+    create_counter();
+
+    xTaskCreate(lv_tick_task, "lv_tick", 2048, NULL, 5, NULL);
+    xTaskCreate(lv_task, "lv_task", 4096, NULL, 5, NULL);
 
 
 
