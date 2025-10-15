@@ -8,8 +8,8 @@
 #include "lvgl.h"
 
 
-#define I2C_SCL 1 /*FIXME*/
-#define I2C_SDA 2
+#define I2C_SCL 19
+#define I2C_SDA 21
 
 /* Docs: https://cdn-shop.adafruit.com/datasheets/SSD1306.pdf */
 #define DISP_ADDRESS 0X3c
@@ -157,6 +157,7 @@ void counter_task(void *arg){
 
 void create_counter(void){
     counter_label = lv_label_create(lv_scr_act());
+    lv_obj_set_style_text_font(counter_label, &lv_font_montserrat_16, 0);
     lv_label_set_text(counter_label, "00");
     lv_obj_align(counter_label, LV_ALIGN_CENTER, 0, 0);
 
