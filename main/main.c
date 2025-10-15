@@ -3,6 +3,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#define LV_CONF_INCLUDE_SIMPLE 1
+#include "lv_conf.h"
+#include "lvgl.h"
+
 
 #define I2C_SCL 1 /*FIXME*/
 #define I2C_SDA 2
@@ -95,6 +99,8 @@ void init_display(void){
 void app_main(void){
     init_i2c();
     init_display();
+    lv_init();
+
 
 
 }
