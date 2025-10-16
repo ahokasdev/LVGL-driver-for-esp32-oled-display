@@ -12,7 +12,7 @@
  */
 
 /* clang-format off */
-#if 0 /* Set this to "1" to enable content */
+#if 1 /* Set this to "1" to enable content */
 
 #ifndef LV_CONF_H
 #define LV_CONF_H
@@ -29,6 +29,7 @@
 /** Color depth: 1 (I1), 8 (L8), 16 (RGB565), 24 (RGB888), 32 (XRGB8888) */
 #define LV_COLOR_DEPTH 1
 #define LV_COLOR_1_BYTE 1
+#define LV_USE_THEME_MONO 1
 
 /*=========================
    STDLIB WRAPPER SETTINGS
@@ -604,7 +605,7 @@
  * https://fonts.google.com/specimen/Montserrat */
 #define LV_FONT_MONTSERRAT_8  0
 #define LV_FONT_MONTSERRAT_10 0
-#define LV_FONT_MONTSERRAT_12 0
+#define LV_FONT_MONTSERRAT_12 1
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_MONTSERRAT_16 0
 #define LV_FONT_MONTSERRAT_18 0

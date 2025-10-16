@@ -4,9 +4,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#define LV_COLOR_DEPTH 16
-#define LV_USE_LOG 0
-#define LV_FONT_MONSTERRAT_14 1
+#define LV_CONF_INCLUDE_SIMPLE 1
+#include "lv_conf.h"
 
 #include "lvgl.h"
 
@@ -23,6 +22,8 @@ static i2c_master_dev_handle_t disp_handle;
 static lv_obj_t *counter_label;
 
 static SemaphoreHandle_t flush_sem = NULL;
+
+static lv_color_t lv_buf[128 * 64];
 
 void init_i2c(void){
     i2c_master_bus_config_t i2c_mst_config = {
@@ -67,40 +68,14 @@ void i2c_disp_send_cmd(uint8_t cmd){
     free(buf);
 }*/
 void i2c_disp_send_data(uint8_t *data, size_t len){
-    if(len <= 1024){
-        uint8_t *buf = malloc(len+1);
-
-        buf[0] = 0x40;
-        memcpy(&buf[1], data, len);
-
-        esp_err_t ret = i2c_master_transmit(disp_handle, buf, len+1, pdMS_TO_TICKS(2000));
-
-        free(buf);
-        return;
-    }
-
-
-    const size_t chunk_size = 64;
-
-    for (size_t offset = 0; offset < len; offset += chunk_size){
-        size_t remaining = len - offset;
-        size_t to_send = (remaining < chunk_size) ? remaining : chunk_size;
-
-        uint8_t *buf = malloc(to_send + 1);
-        buf[0] = 0x40; /* data mode */
-        memcpy(&buf[1], &data[offset], to_send);
-
-        esp_err_t ret = i2c_master_transmit(disp_handle, buf, to_send + 1, pdMS_TO_TICKS(500));
-
-        if (ret != ESP_OK)
-        {
-            printf("ERROR at offset %d: 0x%x\n", offset, ret);
-        }
-
-        free(buf);
-
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
+    
+    uint8_t *buf = malloc(len+1);
+    buf[0] = 0x40;
+    memcpy(&buf[1], data, len);
+    esp_err_t ret = i2c_master_transmit(disp_handle, buf, len+1, pdMS_TO_TICKS(2000));
+    free(buf);
+    return;
+    
 }
 
 void init_display(void){
@@ -124,8 +99,8 @@ void init_display(void){
     i2c_disp_send_cmd(0x20); // Set Memory Addressing Mode
     i2c_disp_send_cmd(0x00); // Horizontal addressing mode
 
-    i2c_disp_send_cmd(0xA1); // Set segment re-map (A0h/A1h)
-    i2c_disp_send_cmd(0xC8); // Set COM output scan direction
+    i2c_disp_send_cmd(0xA0); // Set segment re-map (A0h/A1h)
+    i2c_disp_send_cmd(0xC0); // Set COM output scan direction
 
     i2c_disp_send_cmd(0xDA); // Set COM pins hardware configuration
     i2c_disp_send_cmd(0x12); // Alternative COM pin config
@@ -147,60 +122,58 @@ void init_display(void){
     i2c_disp_send_cmd(0xAF); // Display ON
 }
 
-void lvgl_flush_callback(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p){
-    if(flush_sem == NULL){
-        lv_disp_flush_ready(drv);
+void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
+{
+    printf("FLUSH CALLED! area: (%ld,%ld)-(%ld,%ld)\n", (long)area->x1, (long)area->y1, (long)area->x2, (long)area->y2);
+
+    if (flush_sem == NULL)
+    {
+        lv_display_flush_ready(disp);
         return;
     }
     xSemaphoreTake(flush_sem, portMAX_DELAY);
 
-    uint16_t width = area->x2 - area->x1 + 1;
-    uint16_t height = area->y2 - area->y1 + 1;
 
-    uint8_t start_page = area->y1 / 8;
-    uint8_t end_page = area->y2 / 8;
-    uint8_t num_pages = end_page - start_page + 1;
+    uint16_t width = 128;
+    uint16_t height = 64;
+    uint16_t pages = height/8;
 
-    size_t mono_size = width * num_pages;
-    uint8_t *mono_buf = malloc(mono_size);
-    memset(mono_buf, 0, mono_size);
+    static uint8_t buf[128*8];
+    memset(buf, 0, sizeof(buf));
 
-    for (uint16_t page = 0; page < num_pages; page++){
-        for (uint16_t x = 0; x < width; x++){
-            uint8_t page_byte = 0;
+    uint8_t *pixels = px_map;
 
-            for (uint8_t bit = 0; bit < 8; bit++)
-            {
-                uint16_t src_y = page * 8 + bit;
+    printf("Center pixels (64,32): %d %d %d %d\n",
+           pixels[32 * 128 + 62], pixels[32 * 128 + 63],
+           pixels[32 * 128 + 64], pixels[32 * 128 + 65]);
 
-                if (src_y < height)
-                {
-                    lv_color_t color = color_p[src_y * width + x];
+    for(uint8_t page = 0; page < pages; page++){
+        for(uint16_t x = 0; x < width; x++){
 
-                    if (color.full != 0)
-                    {
-                        page_byte |= (1 << bit);
-                    }
+            uint8_t byte = 0;
+            for(uint8_t bit = 0; bit < 8; bit++){
+                uint16_t y = page*8 + bit;
+                if(pixels[y*width+x] != 0){
+                    byte |= (1<<bit);
                 }
             }
+            buf[page*width+x] = byte;
 
-            mono_buf[page * width + x] = page_byte;
         }
     }
 
     i2c_disp_send_cmd(0x21);
-    i2c_disp_send_cmd(area->x1);
-    i2c_disp_send_cmd(area->x2);
+    i2c_disp_send_cmd(0);
+    i2c_disp_send_cmd(width-1);
 
     i2c_disp_send_cmd(0x22);
-    i2c_disp_send_cmd(start_page);
-    i2c_disp_send_cmd(end_page);
+    i2c_disp_send_cmd(0);
+    i2c_disp_send_cmd(pages-1);
 
+   
+    i2c_disp_send_data(buf, sizeof(buf));
 
-    i2c_disp_send_data(mono_buf, mono_size);
-    free(mono_buf);
-    lv_disp_flush_ready(drv);
-
+    lv_display_flush_ready(disp);
     xSemaphoreGive(flush_sem);
 }
 
@@ -211,20 +184,17 @@ void init_graphics(void){
     }
 
     lv_init();
+    printf("LVGL initialized\n");
 
-    static lv_disp_draw_buf_t disp_buf;
-    static lv_color_t buf1[128*8];
-    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, 128*8);
+    printf("LV_COLOR_DEPTH = %d\n", LV_COLOR_DEPTH);
 
-    static lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = 128;
-    disp_drv.ver_res = 64;
-    disp_drv.flush_cb = lvgl_flush_callback;
-    disp_drv.draw_buf = &disp_buf;
+    lv_display_t *display = lv_display_create(128, 64);
+    printf("Display created\n");
+    lv_display_set_flush_cb(display, lvgl_flush_callback);
+    printf("Flush callback set\n");
+    lv_display_set_buffers(display, lv_buf, NULL, sizeof(lv_buf), LV_DISPLAY_RENDER_MODE_FULL);
+    printf("lvgl buffers set");
 
-    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
-    lv_disp_set_default(disp);
 }
 
 void lv_tick_task(void *arg){
@@ -261,12 +231,19 @@ void counter_task(void *arg){
 }
 
 void create_counter(void){
+    lv_obj_t *scr = lv_scr_act();
+    lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+
     counter_label = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_font(counter_label, &lv_font_montserrat_14, 0);
+    printf("Label created");
+    lv_obj_set_style_text_color(counter_label, lv_color_white(), 0);
+    //lv_obj_set_style_text_font(counter_label, &lv_font_montserrat_12, 0);
     lv_label_set_text(counter_label, "00");
     lv_obj_align(counter_label, LV_ALIGN_CENTER, 0, 0);
 
     xTaskCreate(counter_task, "counter_task", 2048, NULL, 5, NULL);
+    printf("Counter task created");
 }
 
 void clear_display(void)
@@ -340,24 +317,24 @@ void app_main(void){
 
     
     vTaskDelay(pdMS_TO_TICKS(200));
-    /*
+    
     init_graphics();
-    vTaskDelay(pdMS_TO_TICKS(100)); 
+    vTaskDelay(pdMS_TO_TICKS(500)); 
 
     
     create_counter(); 
 
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     xTaskCreate(lv_tick_task, "lv_tick", 4096, NULL, 1, NULL);
     xTaskCreate(lv_task, "lv_task", 8192, NULL, 5, NULL);
 
-    */
+    
 
-    while(1){
+    /*while(1){
         clear_display();
         vTaskDelay(pdMS_TO_TICKS(1000));
         draw_text_ok();
         vTaskDelay(pdMS_TO_TICKS(1000));
-    }
+    }*/
 }
