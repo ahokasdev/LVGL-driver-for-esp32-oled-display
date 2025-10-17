@@ -260,7 +260,7 @@ void create_counter(void){
     printf("Label created");
     lv_label_set_text(counter_label, "00");
     lv_obj_set_style_text_color(counter_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(counter_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(counter_label, &lv_font_montserrat_44, 0);
     lv_obj_set_style_pad_all(counter_label, 0, 0);
     lv_obj_set_style_margin_all(counter_label, 0, 0);
     lv_obj_set_width(counter_label, LV_SIZE_CONTENT);
