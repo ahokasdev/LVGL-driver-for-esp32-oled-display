@@ -142,15 +142,9 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
     memset(buf, 0, sizeof(buf));
 
     uint16_t bytes = (width * height + 7) / 8;
-
     uint16_t bytes_per_row = width / 8;
-
     uint16_t bytes_per_page = bytes_per_row*8;
-
     uint8_t page = 0;
-    uint8_t row_byte = 0;
-    uint8_t byte_bit = 0;
-
     uint8_t page_x = 0;
     uint8_t page_y = 0;
 
@@ -164,26 +158,16 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
             if (byte & (1 << bit))
             {
                 buf[page_x] |= (1 << page_y);
-                printf("#");
-            }
-            else
-            {
-                printf(".");
             }
             ++page_x;
         }
-        row_byte++;
         if (i % bytes_per_row == 0 && i != 0)
         {
-            printf("pagex=%d pagey=%d", page_x, page_y);
-            printf("     %ld\n", (long)i);
-            row_byte = 0;
             page_y++;
             page_x = 0;
             
         }
         if(i% bytes_per_page == 0 && i != 0){
-            printf("\npage\n\n");
             i2c_disp_send_cmd(0x22);
             i2c_disp_send_cmd(page);
             i2c_disp_send_cmd(page);
@@ -324,7 +308,9 @@ void create_counter(void){
     counter_label = lv_label_create(scr);
     printf("Label created");
     lv_obj_set_style_text_color(counter_label, lv_color_white(), 0);
-    //lv_obj_set_style_text_font(counter_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(counter_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_align(counter_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(counter_label, LV_HOR_RES);
     lv_label_set_text(counter_label, "00");
     lv_obj_align(counter_label, LV_ALIGN_CENTER, 0, 0);
     
