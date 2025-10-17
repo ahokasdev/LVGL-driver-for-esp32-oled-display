@@ -152,7 +152,6 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
     for (uint16_t i = 1; i <= bytes; i++)
     {
         uint8_t byte = px_map[i];
-        
 
         for (int bit = 7; bit >= 0; bit--)
         { 
@@ -305,7 +304,17 @@ void create_counter(void){
     lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
     */
 
-    
+    // Valkoinen neliö vasempaan reunaan
+    lv_obj_t *box = lv_obj_create(scr);
+    lv_obj_set_size(box, 10, 10);
+    lv_obj_align(box, LV_ALIGN_TOP_LEFT, 0, 0); // TOP_LEFT varmistaa vasemman reunan
+    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(box, 0, 0);
+    lv_obj_set_style_radius(box, 0, 0); // TÄMÄ POISTAA PYÖREÄT KULMAT!
+    lv_obj_set_style_pad_all(box, 0, 0);
+    lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+
     counter_label = lv_label_create(scr);
     printf("Label created");
     lv_label_set_text(counter_label, "00");
@@ -318,7 +327,7 @@ void create_counter(void){
     lv_obj_set_width(counter_label, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(counter_label, LV_TEXT_ALIGN_LEFT, 0);
     
-    lv_obj_align(counter_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_align(counter_label, LV_ALIGN_CENTER, 0, 0);
     
     xTaskCreate(counter_task, "counter_task", 2048, NULL, 5, NULL);
     printf("Counter task created"); 
