@@ -23,7 +23,7 @@ static lv_obj_t *counter_label;
 
 static SemaphoreHandle_t flush_sem = NULL;
 
-static lv_color_t lv_buf[128 * 64];
+static uint8_t lv_buf[(128 * 64/8)+8];
 
 void init_i2c(void){
     i2c_master_bus_config_t i2c_mst_config = {
@@ -99,8 +99,8 @@ void init_display(void){
     i2c_disp_send_cmd(0x20); // Set Memory Addressing Mode
     i2c_disp_send_cmd(0x00); // Horizontal addressing mode
 
-    i2c_disp_send_cmd(0xA0); // Set segment re-map (A0h/A1h)
-    i2c_disp_send_cmd(0xC0); // Set COM output scan direction
+    i2c_disp_send_cmd(0xA1); // Set segment re-map (A0h/A1h)
+    i2c_disp_send_cmd(0xC8); // Set COM output scan direction
 
     i2c_disp_send_cmd(0xDA); // Set COM pins hardware configuration
     i2c_disp_send_cmd(0x12); // Alternative COM pin config
@@ -134,44 +134,106 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
     xSemaphoreTake(flush_sem, portMAX_DELAY);
 
 
+
     uint16_t width = 128;
     uint16_t height = 64;
-    uint16_t pages = height/8;
 
-    static uint8_t buf[128*8];
+    uint8_t buf[128];
     memset(buf, 0, sizeof(buf));
 
-    uint8_t *pixels = px_map;
+    uint16_t bytes = (width * height + 7) / 8;
 
-    printf("Center pixels (64,32): %d %d %d %d\n",
-           pixels[32 * 128 + 62], pixels[32 * 128 + 63],
-           pixels[32 * 128 + 64], pixels[32 * 128 + 65]);
+    uint16_t bytes_per_row = width / 8;
 
-    for(uint8_t page = 0; page < pages; page++){
-        for(uint16_t x = 0; x < width; x++){
+    uint16_t bytes_per_page = bytes_per_row*8;
 
-            uint8_t byte = 0;
-            for(uint8_t bit = 0; bit < 8; bit++){
-                uint16_t y = page*8 + bit;
-                if(pixels[y*width+x] != 0){
-                    byte |= (1<<bit);
-                }
+    uint8_t page = 0;
+    uint8_t row_byte = 0;
+    uint8_t byte_bit = 0;
+
+    uint8_t page_x = 0;
+    uint8_t page_y = 0;
+
+    for (uint16_t i = 1; i <= bytes; i++)
+    {
+        uint8_t byte = px_map[i];
+        
+
+        for (int bit = 7; bit >= 0; bit--)
+        { 
+            if (byte & (1 << bit))
+            {
+                buf[page_x] |= (1 << page_y);
+                printf("#");
             }
-            buf[page*width+x] = byte;
-
+            else
+            {
+                printf(".");
+            }
+            ++page_x;
+        }
+        row_byte++;
+        if (i % bytes_per_row == 0 && i != 0)
+        {
+            printf("pagex=%d pagey=%d", page_x, page_y);
+            printf("     %ld\n", (long)i);
+            row_byte = 0;
+            page_y++;
+            page_x = 0;
+            
+        }
+        if(i% bytes_per_page == 0 && i != 0){
+            printf("\npage\n\n");
+            i2c_disp_send_cmd(0x22);
+            i2c_disp_send_cmd(page);
+            i2c_disp_send_cmd(page);
+            i2c_disp_send_data(buf, sizeof(buf));
+            memset(buf, 0, sizeof(buf));
+            page++;
+            page_y = 0;
         }
     }
 
-    i2c_disp_send_cmd(0x21);
-    i2c_disp_send_cmd(0);
-    i2c_disp_send_cmd(width-1);
+    /*
+    static uint8_t vtiled_buf[(128 * 64 / 8) + 8];
+    lv_draw_sw_i1_convert_to_vtiled(px_map, 1024, width, height, vtiled_buf, sizeof(vtiled_buf), false);
 
-    i2c_disp_send_cmd(0x22);
-    i2c_disp_send_cmd(0);
-    i2c_disp_send_cmd(pages-1);
 
-   
-    i2c_disp_send_data(buf, sizeof(buf));
+    uint32_t pixel_count = 0;
+    uint16_t k = 0;
+
+    for (uint8_t page = 0; page < pages; page++){
+        for (uint16_t i = 0; i < width; i++){
+            uint8_t byte = vtiled_buf[1+ i*pages + page];
+
+            for (int bit = 0; bit <= 7; bit++){
+                pixel_count++;
+                if (byte & (1 << bit)){
+                    buf[k++] = 1;
+                    printf("#");
+                } else{ 
+                    buf[k++] = 0;
+                    printf(".");
+                }
+            }
+            if (i % (width / 8) == 0)
+            {
+                printf("\n");
+            }
+        }
+
+        i2c_disp_send_cmd(0x22);
+        i2c_disp_send_cmd(page);
+        i2c_disp_send_cmd(page);
+        i2c_disp_send_data(buf, buf_size);
+        k = 0;
+        printf("page sent");
+        printf("%ld", (long)pixel_count);
+    }
+
+    printf("%ld", (long)pixel_count);
+
+    */
 
     lv_display_flush_ready(disp);
     xSemaphoreGive(flush_sem);
@@ -183,17 +245,29 @@ void init_graphics(void){
         xSemaphoreGive(flush_sem);
     }
 
+    memset(lv_buf, 0, sizeof(lv_buf));
+
     lv_init();
     printf("LVGL initialized\n");
 
     printf("LV_COLOR_DEPTH = %d\n", LV_COLOR_DEPTH);
 
+    printf("sizeof(lv_color_t) = %zu bytes\n", sizeof(lv_color_t));
+    printf("sizeof(lv_buf) = %zu bytes\n", sizeof(lv_buf));
+    printf("Expected buffer: 128*64 = 8192 pixels\n");
+
+
     lv_display_t *display = lv_display_create(128, 64);
+    lv_display_set_color_format(display, LV_COLOR_FORMAT_I1);
     printf("Display created\n");
     lv_display_set_flush_cb(display, lvgl_flush_callback);
     printf("Flush callback set\n");
     lv_display_set_buffers(display, lv_buf, NULL, sizeof(lv_buf), LV_DISPLAY_RENDER_MODE_FULL);
     printf("lvgl buffers set");
+
+    lv_obj_t *scr = lv_screen_active();
+    lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
 }
 
@@ -235,15 +309,27 @@ void create_counter(void){
     lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
-    counter_label = lv_label_create(lv_scr_act());
+    /*
+    lv_obj_t *box = lv_obj_create(scr);
+    lv_obj_set_size(box, 10, 10);
+    lv_obj_set_pos(box, 5, 5); // Keskelle: (64-5, 32-5)
+    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(box, 0, 0);
+    lv_obj_set_style_pad_all(box, 0, 0);
+    lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    */
+
+    
+    counter_label = lv_label_create(scr);
     printf("Label created");
     lv_obj_set_style_text_color(counter_label, lv_color_white(), 0);
     //lv_obj_set_style_text_font(counter_label, &lv_font_montserrat_12, 0);
     lv_label_set_text(counter_label, "00");
     lv_obj_align(counter_label, LV_ALIGN_CENTER, 0, 0);
-
+    
     xTaskCreate(counter_task, "counter_task", 2048, NULL, 5, NULL);
-    printf("Counter task created");
+    printf("Counter task created"); 
 }
 
 void clear_display(void)

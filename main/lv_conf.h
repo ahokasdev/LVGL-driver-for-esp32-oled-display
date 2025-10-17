@@ -28,8 +28,6 @@
 
 /** Color depth: 1 (I1), 8 (L8), 16 (RGB565), 24 (RGB888), 32 (XRGB8888) */
 #define LV_COLOR_DEPTH 1
-#define LV_COLOR_1_BYTE 1
-#define LV_USE_THEME_MONO 1
 
 /*=========================
    STDLIB WRAPPER SETTINGS
@@ -45,7 +43,7 @@
 #define LV_USE_STDLIB_MALLOC    LV_STDLIB_BUILTIN
 
 /** Possible values
- * - LV_STDLIB_BUILTIN:     LVGL's built in implementation
+ * - LV_STDLIB_BUlILTIN:     LVGL's built in implementation
  * - LV_STDLIB_CLIB:        Standard C functions, like malloc, strlen, etc
  * - LV_STDLIB_MICROPYTHON: MicroPython implementation
  * - LV_STDLIB_RTTHREAD:    RT-Thread implementation
