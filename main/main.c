@@ -5,9 +5,10 @@
 #include "freertos/task.h"
 
 #define LV_CONF_INCLUDE_SIMPLE 1
-#include "lv_conf.h"
 
+#include "lv_conf.h"
 #include "lvgl.h"
+
 
 
 #define I2C_SCL 19
@@ -307,12 +308,17 @@ void create_counter(void){
     
     counter_label = lv_label_create(scr);
     printf("Label created");
+    lv_label_set_text(counter_label, "00");
     lv_obj_set_style_text_color(counter_label, lv_color_white(), 0);
     lv_obj_set_style_text_font(counter_label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_align(counter_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(counter_label, LV_HOR_RES);
-    lv_label_set_text(counter_label, "00");
-    lv_obj_align(counter_label, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_set_style_pad_all(counter_label, 0, 0);
+    lv_obj_set_style_margin_all(counter_label, 0, 0);
+
+    lv_obj_set_width(counter_label, LV_SIZE_CONTENT);
+    lv_obj_set_style_text_align(counter_label, LV_TEXT_ALIGN_LEFT, 0);
+    
+    lv_obj_align(counter_label, LV_ALIGN_TOP_LEFT, 0, 0);
     
     xTaskCreate(counter_task, "counter_task", 2048, NULL, 5, NULL);
     printf("Counter task created"); 
