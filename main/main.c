@@ -16,7 +16,7 @@
 
 /* Docs: https://cdn-shop.adafruit.com/datasheets/SSD1306.pdf */
 #define DISP_ADDRESS 0X3c
-#define I2C_FREQ 100000
+#define I2C_FREQ 400000
 
 static i2c_master_dev_handle_t disp_handle;
 
@@ -55,19 +55,9 @@ void i2c_disp_send_cmd(uint8_t cmd){
     
     i2c_master_transmit(disp_handle, data, sizeof(data), pdMS_TO_TICKS(1000));
     
-
-    vTaskDelay(pdMS_TO_TICKS(1));
 }
 
 
-/*void i2c_disp_send_data(uint8_t *data, size_t len){
-    uint8_t *buf = malloc(len + 1);
-    buf[0] = 0x40; data mode 
-    memcpy(&buf[1], data, len);
-    ESP_ERROR_CHECK(
-        i2c_master_transmit(disp_handle, buf, len + 1, pdMS_TO_TICKS(100)));
-    free(buf);
-}*/
 void i2c_disp_send_data(uint8_t *data, size_t len){
     
     uint8_t *buf = malloc(len+1);
@@ -123,9 +113,7 @@ void init_display(void){
     i2c_disp_send_cmd(0xAF); // Display ON
 }
 
-void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
-{
-    printf("FLUSH CALLED! area: (%ld,%ld)-(%ld,%ld)\n", (long)area->x1, (long)area->y1, (long)area->x2, (long)area->y2);
+void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map){
 
     if (flush_sem == NULL)
     {
@@ -133,8 +121,6 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
         return;
     }
     xSemaphoreTake(flush_sem, portMAX_DELAY);
-
-
 
     uint16_t width = 128;
     uint16_t height = 64;
@@ -154,10 +140,6 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
     for (uint16_t i = 0; i <= bytes; i++)
     {
         uint8_t byte = px_map[i];
-
-        if(i < 8){
-            printf("0x%02X ", (unsigned int)byte);
-        }
 
         for (int bit = 7; bit >= 0; bit--)
         { 
@@ -187,47 +169,6 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
             page_y = 0;
         }
     }
-
-    /*
-    static uint8_t vtiled_buf[(128 * 64 / 8) + 8];
-    lv_draw_sw_i1_convert_to_vtiled(px_map, 1024, width, height, vtiled_buf, sizeof(vtiled_buf), false);
-
-
-    uint32_t pixel_count = 0;
-    uint16_t k = 0;
-
-    for (uint8_t page = 0; page < pages; page++){
-        for (uint16_t i = 0; i < width; i++){
-            uint8_t byte = vtiled_buf[1+ i*pages + page];
-
-            for (int bit = 0; bit <= 7; bit++){
-                pixel_count++;
-                if (byte & (1 << bit)){
-                    buf[k++] = 1;
-                    printf("#");
-                } else{ 
-                    buf[k++] = 0;
-                    printf(".");
-                }
-            }
-            if (i % (width / 8) == 0)
-            {
-                printf("\n");
-            }
-        }
-
-        i2c_disp_send_cmd(0x22);
-        i2c_disp_send_cmd(page);
-        i2c_disp_send_cmd(page);
-        i2c_disp_send_data(buf, buf_size);
-        k = 0;
-        printf("page sent");
-        printf("%ld", (long)pixel_count);
-    }
-
-    printf("%ld", (long)pixel_count);
-
-    */
 
     lv_display_flush_ready(disp);
     xSemaphoreGive(flush_sem);
@@ -275,7 +216,7 @@ void lv_tick_task(void *arg){
 void lv_task(void *arg){
     while(1){
         lv_task_handler();
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
@@ -294,149 +235,59 @@ void counter_task(void *arg){
             counter++;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
 void create_counter(void){
     lv_obj_t *scr = lv_scr_act();
-    //lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
-    //lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
     /*
+    // White box on top left
     lv_obj_t *box = lv_obj_create(scr);
     lv_obj_set_size(box, 10, 10);
-    lv_obj_set_pos(box, 5, 5); // Keskelle: (64-5, 32-5)
+    lv_obj_align(box, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_style_bg_color(box, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(box, 0, 0);
+    lv_obj_set_style_radius(box, 0, 0);
     lv_obj_set_style_pad_all(box, 0, 0);
     lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
     */
 
-    // Valkoinen neliö vasempaan reunaan
-    lv_obj_t *box = lv_obj_create(scr);
-    lv_obj_set_size(box, 10, 10);
-    lv_obj_align(box, LV_ALIGN_TOP_LEFT, 0, 0); // TOP_LEFT varmistaa vasemman reunan
-    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(box, 0, 0);
-    lv_obj_set_style_radius(box, 0, 0); // TÄMÄ POISTAA PYÖREÄT KULMAT!
-    lv_obj_set_style_pad_all(box, 0, 0);
-    lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
-
+    // text label
     counter_label = lv_label_create(scr);
     printf("Label created");
     lv_label_set_text(counter_label, "00");
     lv_obj_set_style_text_color(counter_label, lv_color_white(), 0);
     lv_obj_set_style_text_font(counter_label, &lv_font_montserrat_24, 0);
-
     lv_obj_set_style_pad_all(counter_label, 0, 0);
     lv_obj_set_style_margin_all(counter_label, 0, 0);
-
     lv_obj_set_width(counter_label, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(counter_label, LV_TEXT_ALIGN_LEFT, 0);
-    
     lv_obj_align(counter_label, LV_ALIGN_CENTER, 0, 0);
     
-    xTaskCreate(counter_task, "counter_task", 2048, NULL, 5, NULL);
+    xTaskCreate(counter_task, "counter_task", 2048, NULL, 1, NULL);
     printf("Counter task created"); 
 }
 
-void clear_display(void)
-{
-    printf("Clearing display...\n");
-
-    i2c_disp_send_cmd(0x21);
-    i2c_disp_send_cmd(0);
-    i2c_disp_send_cmd(127);
-    i2c_disp_send_cmd(0x22);
-    i2c_disp_send_cmd(0);
-    i2c_disp_send_cmd(7);
-
-    uint8_t zeros[128];
-    memset(zeros, 0x00, 128);
-
-    for (int page = 0; page < 8; page++)
-    {
-        i2c_disp_send_data(zeros, 128);
-    }
-
-    printf("Cleared!\n");
-}
-
-void draw_text_ok(void)
-{
-    printf("Drawing 'OK'...\n");
-
-    uint8_t letter_O[8] = {
-        0b00000000, // column 0 (tyhjä)
-        0b01111110, // column 1 (vasen reuna)
-        0b10000001, // column 2
-        0b10000001, // column 3
-        0b10000001, // column 4
-        0b01111110, // column 5 (oikea reuna)
-        0b00000000, // column 6 (tyhjä)
-        0b00000000  // column 7 (väli)
-    };
-
-    // Kirjain K
-    uint8_t letter_K[8] = {
-        0b00000000, // column 0 (tyhjä)
-        0b11111111, // column 1 (pystyviiva)
-        0b00011000, // column 2
-        0b00100100, // column 3
-        0b01000010, // column 4
-        0b10000001, // column 5
-        0b00000000, // column 6 (tyhjä)
-        0b00000000  // column 7
-    };
-
-    // Aseta page 3 (keskellä näyttöä), column 50
-    i2c_disp_send_cmd(0x21);
-    i2c_disp_send_cmd(50);
-    i2c_disp_send_cmd(127);
-    i2c_disp_send_cmd(0x22);
-    i2c_disp_send_cmd(3);
-    i2c_disp_send_cmd(3);
-
-    // Lähetä "OK"
-    i2c_disp_send_data(letter_O, 8);
-    i2c_disp_send_data(letter_K, 8);
-
-    printf("'OK' drawn!\n");
-}
 
 void app_main(void){
     init_i2c();
-    vTaskDelay(pdMS_TO_TICKS(100));
-    init_display();
-
+    vTaskDelay(pdMS_TO_TICKS(50));
     
-    vTaskDelay(pdMS_TO_TICKS(200));
-    clear_display();
-
-    vTaskDelay(pdMS_TO_TICKS(200));
+    init_display();
+    vTaskDelay(pdMS_TO_TICKS(50));
 
     init_graphics();
-    vTaskDelay(pdMS_TO_TICKS(500)); 
-
-    clear_display();
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(50));
 
 
 
     xTaskCreate(lv_tick_task, "lv_tick", 4096, NULL, 1, NULL);
-    xTaskCreate(lv_task, "lv_task", 8192, NULL, 5, NULL);
+    xTaskCreate(lv_task, "lv_task", 8192, NULL, 3, NULL);
 
     vTaskDelay(pdMS_TO_TICKS(200));
 
     create_counter();
-
-    /*while(1){
-        clear_display();
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        draw_text_ok();
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }*/
 }
