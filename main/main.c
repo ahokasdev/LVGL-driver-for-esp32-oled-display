@@ -149,9 +149,15 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
     uint8_t page_x = 0;
     uint8_t page_y = 0;
 
-    for (uint16_t i = 1; i <= bytes; i++)
+    px_map += 8;
+
+    for (uint16_t i = 0; i <= bytes; i++)
     {
         uint8_t byte = px_map[i];
+
+        if(i < 8){
+            printf("0x%02X ", (unsigned int)byte);
+        }
 
         for (int bit = 7; bit >= 0; bit--)
         { 
@@ -161,16 +167,20 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
             }
             ++page_x;
         }
-        if (i % bytes_per_row == 0 && i != 0)
+        if ((i+1) % bytes_per_row == 0 && i+1 != 0)
         {
             page_y++;
             page_x = 0;
             
         }
-        if(i% bytes_per_page == 0 && i != 0){
+        if((i+1)% bytes_per_page == 0 && i+1 != 0){
+            i2c_disp_send_cmd(0x21);
+            i2c_disp_send_cmd(0);
+            i2c_disp_send_cmd(127);
             i2c_disp_send_cmd(0x22);
             i2c_disp_send_cmd(page);
             i2c_disp_send_cmd(page);
+            
             i2c_disp_send_data(buf, sizeof(buf));
             memset(buf, 0, sizeof(buf));
             page++;
@@ -290,8 +300,8 @@ void counter_task(void *arg){
 
 void create_counter(void){
     lv_obj_t *scr = lv_scr_act();
-    lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    //lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
+    //lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
     /*
     lv_obj_t *box = lv_obj_create(scr);
@@ -404,19 +414,24 @@ void app_main(void){
 
     
     vTaskDelay(pdMS_TO_TICKS(200));
-    
+    clear_display();
+
+    vTaskDelay(pdMS_TO_TICKS(200));
+
     init_graphics();
     vTaskDelay(pdMS_TO_TICKS(500)); 
 
-    
-    create_counter(); 
+    clear_display();
+    vTaskDelay(pdMS_TO_TICKS(200));
 
-    vTaskDelay(pdMS_TO_TICKS(500));
+
 
     xTaskCreate(lv_tick_task, "lv_tick", 4096, NULL, 1, NULL);
     xTaskCreate(lv_task, "lv_task", 8192, NULL, 5, NULL);
 
-    
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    create_counter();
 
     /*while(1){
         clear_display();
