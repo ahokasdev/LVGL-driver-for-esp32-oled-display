@@ -9,27 +9,21 @@
 #include "lv_conf.h"
 #include "lvgl.h"
 
+#define I2C_SCL  19
+#define I2C_SDA  21
 
+#define DISP_ADDRESS  0X3c
+#define I2C_FREQ      400000
 
-#define I2C_SCL 19
-#define I2C_SDA 21
-
-/* Docs: https://cdn-shop.adafruit.com/datasheets/SSD1306.pdf */
-#define DISP_ADDRESS 0X3c
-#define I2C_FREQ 400000
-
-static i2c_master_dev_handle_t disp_handle;
-
-static lv_obj_t *counter_label;
-
-static SemaphoreHandle_t flush_sem = NULL;
-
-static uint8_t lv_buf[(128 * 64/8)+8];
+static i2c_master_dev_handle_t  disp_handle;
+static lv_obj_t                 *counter_label;
+static SemaphoreHandle_t        flush_sem = NULL;
+static uint8_t                  lv_buf[(128 * 64/8)+8];
 
 void init_i2c(void){
     i2c_master_bus_config_t i2c_mst_config = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
-        .i2c_port = I2C_NUM_0,
+        .i2c_port   = I2C_NUM_0,
         .scl_io_num = I2C_SCL,
         .sda_io_num = I2C_SDA,
         .glitch_ignore_cnt = 7,
@@ -45,7 +39,7 @@ void init_i2c(void){
         .scl_speed_hz = I2C_FREQ,
     };
 
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &disp_handle));
+    i2c_master_bus_add_device(bus_handle, &dev_cfg, &disp_handle);
 
 
 }
@@ -59,14 +53,12 @@ void i2c_disp_send_cmd(uint8_t cmd){
 
 
 void i2c_disp_send_data(uint8_t *data, size_t len){
-    
     uint8_t *buf = malloc(len+1);
-    buf[0] = 0x40;
+    buf[0] = 0x40; /*data mode*/
     memcpy(&buf[1], data, len);
-    esp_err_t ret = i2c_master_transmit(disp_handle, buf, len+1, pdMS_TO_TICKS(2000));
+
+    i2c_master_transmit(disp_handle, buf, len+1, pdMS_TO_TICKS(2000));
     free(buf);
-    return;
-    
 }
 
 void init_display(void){
@@ -115,8 +107,7 @@ void init_display(void){
 
 void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map){
 
-    if (flush_sem == NULL)
-    {
+    if (flush_sem == NULL){
         lv_display_flush_ready(disp);
         return;
     }
@@ -134,28 +125,27 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
     uint8_t page = 0;
     uint8_t page_x = 0;
     uint8_t page_y = 0;
+    uint8_t byte;
 
     px_map += 8;
 
-    for (uint16_t i = 0; i <= bytes; i++)
-    {
-        uint8_t byte = px_map[i];
+    /*converted pixels to page format*/
+    for (uint16_t i = 0; i <= bytes; i++){
+        byte = px_map[i];
 
-        for (int bit = 7; bit >= 0; bit--)
-        { 
-            if (byte & (1 << bit))
-            {
+        for (int bit = 7; bit >= 0; bit--){ 
+            if (byte & (1 << bit)){
                 buf[page_x] |= (1 << page_y);
             }
             ++page_x;
         }
-        if ((i+1) % bytes_per_row == 0 && i+1 != 0)
-        {
+        if ((i+1) % bytes_per_row == 0 && i+1 != 0){
             page_y++;
             page_x = 0;
             
         }
         if((i+1)% bytes_per_page == 0 && i+1 != 0){
+            /*page finished => send to display*/
             i2c_disp_send_cmd(0x21);
             i2c_disp_send_cmd(0);
             i2c_disp_send_cmd(127);
@@ -183,24 +173,16 @@ void init_graphics(void){
     memset(lv_buf, 0, sizeof(lv_buf));
 
     lv_init();
-    printf("LVGL initialized\n");
-
-    printf("LV_COLOR_DEPTH = %d\n", LV_COLOR_DEPTH);
-
-    printf("sizeof(lv_color_t) = %zu bytes\n", sizeof(lv_color_t));
-    printf("sizeof(lv_buf) = %zu bytes\n", sizeof(lv_buf));
-    printf("Expected buffer: 128*64 = 8192 pixels\n");
-
 
     lv_display_t *display = lv_display_create(128, 64);
     lv_display_set_color_format(display, LV_COLOR_FORMAT_I1);
-    printf("Display created\n");
+
     lv_display_set_flush_cb(display, lvgl_flush_callback);
-    printf("Flush callback set\n");
+
     lv_display_set_buffers(display, lv_buf, NULL, sizeof(lv_buf), LV_DISPLAY_RENDER_MODE_FULL);
-    printf("lvgl buffers set");
 
     lv_obj_t *scr = lv_screen_active();
+
     lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
@@ -242,20 +224,7 @@ void counter_task(void *arg){
 void create_counter(void){
     lv_obj_t *scr = lv_scr_act();
 
-    /*
-    // White box on top left
-    lv_obj_t *box = lv_obj_create(scr);
-    lv_obj_set_size(box, 10, 10);
-    lv_obj_align(box, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(box, 0, 0);
-    lv_obj_set_style_radius(box, 0, 0);
-    lv_obj_set_style_pad_all(box, 0, 0);
-    lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
-    */
 
-    // text label
     counter_label = lv_label_create(scr);
     printf("Label created");
     lv_label_set_text(counter_label, "00");
@@ -282,12 +251,10 @@ void app_main(void){
     init_graphics();
     vTaskDelay(pdMS_TO_TICKS(50));
 
-
-
     xTaskCreate(lv_tick_task, "lv_tick", 4096, NULL, 1, NULL);
     xTaskCreate(lv_task, "lv_task", 8192, NULL, 3, NULL);
 
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(150));
 
     create_counter();
 }
