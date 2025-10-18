@@ -1,3 +1,9 @@
-build/
-sdkconfig
-sdkconfig.old
+*
+!*/
+!components/**
+!main/**
+!.gitignore
+!.gitmodules
+!CMakeLists.txt
+!dependencies.lock
+!README.md
