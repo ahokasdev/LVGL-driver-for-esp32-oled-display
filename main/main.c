@@ -15,9 +15,15 @@
 #define DISP_ADDRESS  0X3c
 #define I2C_FREQ      400000
 
+typedef struct {
+    uint8_t page_num;
+    uint8_t data[128];
+} page_data_t;
+
 static i2c_master_dev_handle_t  disp_handle;
 static lv_obj_t                 *counter_label;
 static SemaphoreHandle_t        flush_sem = NULL;
+static QueueHandle_t            page_queue = NULL;
 static uint8_t                  lv_buf[(128 * 64/8)+8];
 
 void init_i2c(void){
@@ -44,7 +50,7 @@ void init_i2c(void){
 
 }
 
-void i2c_disp_send_cmd(uint8_t cmd){
+void disp_send_cmd(uint8_t cmd){
     uint8_t data[2] = {0x00, cmd}; /*command mode*/
     
     i2c_master_transmit(disp_handle, data, sizeof(data), pdMS_TO_TICKS(1000));
@@ -52,7 +58,7 @@ void i2c_disp_send_cmd(uint8_t cmd){
 }
 
 
-void i2c_disp_send_data(uint8_t *data, size_t len){
+void disp_send_data(uint8_t *data, size_t len){
     uint8_t *buf = malloc(len+1);
     buf[0] = 0x40; /*data mode*/
     memcpy(&buf[1], data, len);
@@ -61,48 +67,64 @@ void i2c_disp_send_data(uint8_t *data, size_t len){
     free(buf);
 }
 
+void send_page_task(void *arg){
+    page_data_t page;
+
+    while(1){
+        if(xQueueReceive(page_queue, &page, portMAX_DELAY)){
+            disp_send_cmd(0x21);
+            disp_send_cmd(0);
+            disp_send_cmd(127);
+            disp_send_cmd(0x22);
+            disp_send_cmd(page.page_num);
+            disp_send_cmd(page.page_num);
+            disp_send_data(page.data, 128);
+        }
+    }
+}
+
 void init_display(void){
 
-    i2c_disp_send_cmd(0xAE); // Display OFF
+    disp_send_cmd(0xAE); // Display OFF
 
-    i2c_disp_send_cmd(0xD5); // Set display clock divide ratio/oscillator frequency
-    i2c_disp_send_cmd(0x80); // Default value
+    disp_send_cmd(0xD5); // Set display clock divide ratio/oscillator frequency
+    disp_send_cmd(0x80); // Default value
 
-    i2c_disp_send_cmd(0xA8); // Set multiplex ratio
-    i2c_disp_send_cmd(0x3F); // 1/64 duty (64 COM lines)
+    disp_send_cmd(0xA8); // Set multiplex ratio
+    disp_send_cmd(0x3F); // 1/64 duty (64 COM lines)
 
-    i2c_disp_send_cmd(0xD3); // Set display offset
-    i2c_disp_send_cmd(0x00); // No offset
+    disp_send_cmd(0xD3); // Set display offset
+    disp_send_cmd(0x00); // No offset
 
-    i2c_disp_send_cmd(0x40); // Set display start line to 0
+    disp_send_cmd(0x40); // Set display start line to 0
 
-    i2c_disp_send_cmd(0x8D); // Charge pump setting
-    i2c_disp_send_cmd(0x14); // Enable charge pump
+    disp_send_cmd(0x8D); // Charge pump setting
+    disp_send_cmd(0x14); // Enable charge pump
 
-    i2c_disp_send_cmd(0x20); // Set Memory Addressing Mode
-    i2c_disp_send_cmd(0x00); // Horizontal addressing mode
+    disp_send_cmd(0x20); // Set Memory Addressing Mode
+    disp_send_cmd(0x00); // Horizontal addressing mode
 
-    i2c_disp_send_cmd(0xA1); // Set segment re-map (A0h/A1h)
-    i2c_disp_send_cmd(0xC8); // Set COM output scan direction
+    disp_send_cmd(0xA1); // Set segment re-map (A0h/A1h)
+    disp_send_cmd(0xC8); // Set COM output scan direction
 
-    i2c_disp_send_cmd(0xDA); // Set COM pins hardware configuration
-    i2c_disp_send_cmd(0x12); // Alternative COM pin config
+    disp_send_cmd(0xDA); // Set COM pins hardware configuration
+    disp_send_cmd(0x12); // Alternative COM pin config
 
-    i2c_disp_send_cmd(0x81); // Set contrast control
-    i2c_disp_send_cmd(0xCF); // Max contrast
+    disp_send_cmd(0x81); // Set contrast control
+    disp_send_cmd(0xCF); // Max contrast
 
-    i2c_disp_send_cmd(0xD9); // Set pre-charge period
-    i2c_disp_send_cmd(0xF1); // Phase 1: 15 DCLK, Phase 2: 15 DCLK
+    disp_send_cmd(0xD9); // Set pre-charge period
+    disp_send_cmd(0xF1); // Phase 1: 15 DCLK, Phase 2: 15 DCLK
 
-    i2c_disp_send_cmd(0xDB); // Set VCOMH deselect level
-    i2c_disp_send_cmd(0x40); // ~0.77 x VCC
+    disp_send_cmd(0xDB); // Set VCOMH deselect level
+    disp_send_cmd(0x40); // ~0.77 x VCC
 
-    i2c_disp_send_cmd(0xA4); // Entire display ON (resume to RAM content)
-    i2c_disp_send_cmd(0xA6); // Set normal display (not inverted)
+    disp_send_cmd(0xA4); // Entire display ON (resume to RAM content)
+    disp_send_cmd(0xA6); // Set normal display (not inverted)
 
-    i2c_disp_send_cmd(0x2E); // Deactivate scroll
+    disp_send_cmd(0x2E); // Deactivate scroll
 
-    i2c_disp_send_cmd(0xAF); // Display ON
+    disp_send_cmd(0xAF); // Display ON
 }
 
 void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map){
@@ -146,14 +168,10 @@ void lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *px_
         }
         if((i+1)% bytes_per_page == 0 && i+1 != 0){
             /*page finished => send to display*/
-            i2c_disp_send_cmd(0x21);
-            i2c_disp_send_cmd(0);
-            i2c_disp_send_cmd(127);
-            i2c_disp_send_cmd(0x22);
-            i2c_disp_send_cmd(page);
-            i2c_disp_send_cmd(page);
-            
-            i2c_disp_send_data(buf, sizeof(buf));
+            page_data_t page_data;
+            page_data.page_num = page;
+            memcpy(page_data.data, buf, 128);
+            xQueueSend(page_queue, &page_data, portMAX_DELAY);
             memset(buf, 0, sizeof(buf));
             page++;
             page_y = 0;
@@ -170,15 +188,15 @@ void init_graphics(void){
         xSemaphoreGive(flush_sem);
     }
 
+    page_queue = xQueueCreate(8, sizeof(page_data_t));
+
     memset(lv_buf, 0, sizeof(lv_buf));
 
     lv_init();
 
     lv_display_t *display = lv_display_create(128, 64);
     lv_display_set_color_format(display, LV_COLOR_FORMAT_I1);
-
     lv_display_set_flush_cb(display, lvgl_flush_callback);
-
     lv_display_set_buffers(display, lv_buf, NULL, sizeof(lv_buf), LV_DISPLAY_RENDER_MODE_FULL);
 
     lv_obj_t *scr = lv_screen_active();
@@ -251,10 +269,11 @@ void app_main(void){
     init_graphics();
     vTaskDelay(pdMS_TO_TICKS(50));
 
+    xTaskCreate(send_page_task, "page_send", 4096, NULL, 2, NULL);
     xTaskCreate(lv_tick_task, "lv_tick", 4096, NULL, 1, NULL);
     xTaskCreate(lv_task, "lv_task", 8192, NULL, 3, NULL);
 
-    vTaskDelay(pdMS_TO_TICKS(150));
+    vTaskDelay(pdMS_TO_TICKS(200));
 
     create_counter();
 }
